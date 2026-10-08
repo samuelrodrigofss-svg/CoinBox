@@ -80,26 +80,34 @@ jobs:
         npx cap add android
         npx cap sync android
 
-    # 7. CORREÇÃO CRUCIAL: Configura o Java JDK 21 exigido pelo compilador do app
+    # 7. CORREÇÃO CRUCIAL: Remove o conflito de classes duplicadas do Kotlin injetando regras de exclusão no build.gradle
+    - name: Corrigir Classes Duplicadas do Kotlin
+      run: |
+        if [ -f "android/app/build.gradle" ]; then
+          echo "Injetando regras de exclusão de duplicidade no build.gradle..."
+          sed -i '/android {/a \    packagingOptions {\n        resources {\n            excludes += "META-INF/kotlin-stdlib*"\n            excludes += "META-INF/kotlinx-*" \n        }\n    }' android/app/build.gradle
+        fi
+
+    # 8. Configura o Java JDK 21 exigido pelo compilador do app
     - name: Configurar Java JDK 21
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '21'
 
-    # 8. Cria a chave de segurança obrigatória para assinar o novo pacote
+    # 9. Cria a chave de segurança obrigatória para assinar o novo pacote
     - name: Gerar Chave de Assinatura (debug.keystore)
       run: |
         mkdir -p android/app
         keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
-    # 9. Configura limites de RAM para o Gradle do Capacitor
+    # 10. Configura limites de RAM para o Gradle do Capacitor
     - name: Configurar Limites de Memória do Gradle
       run: |
         echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle.properties
         echo "org.gradle.daemon=false" >> android/gradle.properties
 
-    # 10. Configura os repositórios da Google para as ferramentas do Capacitor
+    # 11. Configura os repositórios da Google para as ferramentas do Capacitor
     - name: Criar Script de Inicialização Global (init.gradle)
       run: |
         cat << 'EOF' > init.gradle
@@ -120,20 +128,20 @@ jobs:
         }
         EOF
 
-    # 11. Configura a versão recomendada do Gradle para projetos do Capacitor
+    # 12. Configura a versão recomendada do Gradle para projetos do Capacitor
     - name: Configurar e Validar Gradle Oficial
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: '8.9'
 
-    # 12. Compila o APK usando a nova pasta android gerada com sucesso
+    # 13. Compila o APK usando a nova pasta android gerada com sucesso
     - name: Compilar APK Final CoinBox
       run: |
         cd android
         chmod +x gradlew 2>/dev/null || true
         gradle assembleDebug --init-script ../init.gradle -Djava.awt.headless=true
 
-    # 13. Envia o APK gerado para a aba de Downloads
+    # 14. Envia o APK gerado para a aba de Downloads
     - name: Enviar APK para download
       uses: actions/upload-artifact@v4
       with:
