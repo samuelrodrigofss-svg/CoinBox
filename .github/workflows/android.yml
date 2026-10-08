@@ -1,4 +1,4 @@
-name: Compilar APK React Native
+name: Compilar APK React Vite
 
 on:
   push:
@@ -26,7 +26,6 @@ jobs:
         mkdir -p extracted_project
         unzip -o "$ZIP_FILE" -d ./extracted_project
         
-        # Se os arquivos estiverem dentro de uma subpasta, traz para a raiz
         if [ -f "./extracted_project/package.json" ]; then
           cp -r ./extracted_project/. .
         else
@@ -41,43 +40,59 @@ jobs:
         rm -rf ./extracted_project
         touch .env.example .env
 
-    # 3. CORREÇÃO: Configura o Node.js SEM a linha de cache para evitar o erro de arquivo faltando
+    # 3. Configura o Node.js para rodar os comandos do Vite e do Capacitor
     - name: Configurar Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
 
-    # 4. Instala os pacotes e dependências do seu App
-    - name: Instalar Dependências do Projeto (NPM)
-      run: npm install --legacy-peer-deps
+    # 4. Instala as dependências e adiciona o Capacitor para gerar o Android real
+    - name: Instalar Dependências e Ferramentas de App
+      run: |
+        npm install --legacy-peer-deps
+        npm install @capacitor/core @capacitor/cli @capacitor/android --save-dev --legacy-peer-deps
 
-    # 5. Configura o Java necessário para a compilação do Android
+    # 5. Compila o site em React/Vite (Gera a pasta 'dist')
+    - name: Compilar Código de Interface (Vite Build)
+      run: npm run build --if-present
+
+    # 6. Inicializa o Capacitor e cria uma pasta Android nativa novinha e válida
+    - name: Inicializar e Sincronizar Plataforma Android
+      run: |
+        # Cria a pasta 'dist' vazia caso o comando build não tenha gerado com esse nome
+        mkdir -p dist
+        if [ ! -f "dist/index.html" ] && [ -f "index.html" ]; then
+          cp -r index.html src assets dist/ 2>/dev/null || cp -r * dist/ 2>/dev/null || true
+        fi
+        
+        # Remove a pasta android falsa que veio no seu ZIP para não dar conflito
+        rm -rf android
+        
+        # Executa a geração oficial do projeto Android estruturado
+        npx cap init CoinBox com.samuel.coinbox --web-dir=dist
+        npx cap add android
+        npx cap sync android
+
+    # 7. Configura o Java necessário para compilar o projeto gerado
     - name: Configurar Java JDK 17
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    # 6. Cria as chaves de segurança para assinar o APK de testes do React Native
+    # 8. Cria a chave de segurança obrigatória para assinar o novo pacote
     - name: Gerar Chave de Assinatura (debug.keystore)
       run: |
         mkdir -p android/app
         keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
-    # 7. Configura os limites de memória do Gradle para o servidor não cair
+    # 9. Configura limites de RAM para o Gradle do Capacitor
     - name: Configurar Limites de Memória do Gradle
       run: |
-        mkdir -p android
-        echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle_properties_backup || true
-        if [ -f "android/gradle.properties" ]; then
-          echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle.properties
-          echo "org.gradle.daemon=false" >> android/gradle.properties
-        else
-          echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" > android/gradle.properties
-          echo "org.gradle.daemon=false" >> android/gradle.properties
-        fi
+        echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle.properties
+        echo "org.gradle.daemon=false" >> android/gradle.properties
 
-    # 8. Cria o Script de Inicialização Global para os repositórios da Google
+    # 10. Configura os repositórios da Google para as ferramentas do Capacitor
     - name: Criar Script de Inicialização Global (init.gradle)
       run: |
         cat << 'EOF' > init.gradle
@@ -98,20 +113,20 @@ jobs:
         }
         EOF
 
-    # 9. Configura a versão correta do Gradle exigida pelo seu projeto
+    # 11. Configura a versão recomendada do Gradle para projetos do Capacitor
     - name: Configurar e Validar Gradle Oficial
       uses: gradle/actions/setup-gradle@v4
       with:
-        gradle-version: '9.3.1'
+        gradle-version: '8.5'
 
-    # 10. Compila o arquivo APK rodando o comando dentro da pasta do Android
-    - name: Compilar APK de Testes React Native
+    # 12. Compila o APK usando a nova pasta android gerada com sucesso
+    - name: Compilar APK Final CoinBox
       run: |
         cd android
         chmod +x gradlew 2>/dev/null || true
-        gradle clean assembleDebug --init-script ../init.gradle -Djava.awt.headless=true
+        gradle assembleDebug --init-script ../init.gradle -Djava.awt.headless=true
 
-    # 11. Disponibiliza o arquivo final para download
+    # 13. Envia o APK gerado para a aba de Downloads
     - name: Enviar APK para download
       uses: actions/upload-artifact@v4
       with:
