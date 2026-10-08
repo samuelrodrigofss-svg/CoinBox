@@ -80,12 +80,24 @@ jobs:
         npx cap add android
         npx cap sync android
 
-    # 7. CORREÇÃO CRUCIAL: Remove o conflito de classes duplicadas do Kotlin injetando regras de exclusão no build.gradle
-    - name: Corrigir Classes Duplicadas do Kotlin
+    # 7. CORREÇÃO DEFINITIVA: Injeta as regras de exclusão usando o arquivo buildExtras do Gradle
+    - name: Forçar Resolução de Duplicidade do Kotlin
       run: |
+        mkdir -p android/app
+        cat << 'EOF' > android/app/buildExtras.gradle
+        android {
+            packagingOptions {
+                resources {
+                    excludes += "META-INF/kotlin-stdlib*"
+                    excludes += "META-INF/kotlinx-*"
+                    excludes += "META-INF/kotlin-*"
+                }
+            }
+        }
+        EOF
+        # Avisa o build principal para carregar essas configurações extras
         if [ -f "android/app/build.gradle" ]; then
-          echo "Injetando regras de exclusão de duplicidade no build.gradle..."
-          sed -i '/android {/a \    packagingOptions {\n        resources {\n            excludes += "META-INF/kotlin-stdlib*"\n            excludes += "META-INF/kotlinx-*" \n        }\n    }' android/app/build.gradle
+            echo "apply from: 'buildExtras.gradle'" >> android/app/build.gradle
         fi
 
     # 8. Configura o Java JDK 21 exigido pelo compilador do app
