@@ -14,7 +14,7 @@ jobs:
     - name: Baixar código do repositório
       uses: actions/checkout@v4
 
-    # 2. Extrai o ZIP de forma inteligente adaptando-se à estrutura das pastas
+    # 2. Extrai o ZIP e move os arquivos se estiverem dentro da pasta 'android'
     - name: Extrair Projeto Corretamente
       run: |
         ZIP_FILE=$(find . -name "*.zip" | head -n 1)
@@ -26,23 +26,24 @@ jobs:
         mkdir -p extracted_project
         unzip -o "$ZIP_FILE" -d ./extracted_project
         
-        # Encontra o diretório real que contém o arquivo de build principal
-        GRADLE_BASE=$(find ./extracted_project -name "build.gradle.kts" -o -name "build.gradle" | head -n 1)
-        
-        if [ -n "$GRADLE_BASE" ]; then
-          ROOT_PROJECT_DIR=$(dirname "$GRADLE_BASE")
-          # Só copia se os arquivos estiverem em uma subpasta profunda. Se já for a raiz '.', pula para evitar o erro do mesmo arquivo
-          if [ "$ROOT_PROJECT_DIR" != "./extracted_project" ] && [ "$ROOT_PROJECT_DIR" != "." ]; then
-            echo "Movendo arquivos da subpasta $ROOT_PROJECT_DIR para a raiz de compilação..."
-            cp -r "$ROOT_PROJECT_DIR"/. .
-          else
-            echo "Os arquivos já estão estruturados na raiz. Copiando conteúdo..."
-            cp -r ./extracted_project/* . 2>/dev/null || true
-            cp -r ./extracted_project/.* . 2>/dev/null || true
-          fi
+        # CORREÇÃO CRUCIAL: Se o projeto veio dentro de uma pasta chamada 'android', move o conteúdo dela para a raiz
+        if [ -d "./extracted_project/android" ]; then
+          echo "Pasta 'android' detectada. Movendo arquivos para a raiz..."
+          cp -r ./extracted_project/android/. .
         else
-          echo "Aviso: build.gradle não encontrado de primeira. Copiando tudo de forma padrão..."
-          cp -r ./extracted_project/* . 2>/dev/null || true
+          # Caso contrário, faz a busca padrão pelo arquivo de build
+          GRADLE_BASE=$(find ./extracted_project -name "build.gradle.kts" -o -name "build.gradle" | head -n 1)
+          if [ -n "$GRADLE_BASE" ]; then
+            ROOT_PROJECT_DIR=$(dirname "$GRADLE_BASE")
+            if [ "$ROOT_PROJECT_DIR" != "./extracted_project" ] && [ "$ROOT_PROJECT_DIR" != "." ]; then
+              cp -r "$ROOT_PROJECT_DIR"/. .
+            else
+              cp -r ./extracted_project/* . 2>/dev/null || true
+              cp -r ./extracted_project/.* . 2>/dev/null || true
+            fi
+          else
+            cp -r ./extracted_project/* . 2>/dev/null || true
+          fi
         fi
         
         # Garante que a pasta gradle de configurações esteja na raiz se existir
