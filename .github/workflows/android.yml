@@ -80,39 +80,17 @@ jobs:
         npx cap add android
         npx cap sync android
 
-    # 7. CORREÇÃO GLOBAL: Força a exclusão de qualquer arquivo Kotlin duplicado diretamente nos arquivos principais do Gradle
+    # 7. CORREÇÃO DE SINTAXE: Injeta a resolução de duplicidade em linha única sem usar blocos complexos
     - name: Forçar Resolução de Conflito de Bibliotecas
       run: |
-        # Injeta uma regra para ignorar duplicados no arquivo do Aplicativo
         if [ -f "android/app/build.gradle" ]; then
-          echo "Injetando packaging block no app/build.gradle..."
-          cat << 'EOF' >> android/app/build.gradle
-          android {
-              packaging {
-                  resources {
-                      excludes += "META-INF/**"
-                      pickFirsts += "**/kotlin-stdlib-jdk*"
-                      pickFirsts += "**/kotlin-stdlib*"
-                  }
-              }
-          }
-          EOF
+          echo "Injetando regras de recursos no app/build.gradle..."
+          echo -e "\nandroid {\n    packaging {\n        resources {\n            excludes += \"META-INF/**\"\n            pickFirsts += \"**/kotlin-stdlib-jdk*\"\n            pickFirsts += \"**/kotlin-stdlib*\"\n        }\n    }\n}" >> android/app/build.gradle
         fi
         
-        # Injeta uma regra de resolução de versão idêntica no arquivo raiz do Android
         if [ -f "android/build.gradle" ]; then
-          echo "Injetando resolutionStrategy no build.gradle da raiz..."
-          cat << 'EOF' >> android/build.gradle
-          subprojects {
-              configurations.all {
-                  resolutionStrategy {
-                      force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
-                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
-                  }
-              }
-          }
-          EOF
+          echo "Injetando resoluções de versão no build.gradle raiz..."
+          echo -e "\nsubprojects {\n    configurations.all {\n        resolutionStrategy {\n            force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'\n            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'\n            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'\n        }\n    }\n}" >> android/build.gradle
         fi
 
     # 8. Configura o Java JDK 21 exigido pelo compilador do app
@@ -134,7 +112,7 @@ jobs:
         echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle.properties
         echo "org.gradle.daemon=false" >> android/gradle.properties
 
-    # 11. Configura os repositórios da Google para as ferramentas do Capacitor
+    # 11. Cria o Script de Inicialização Global para os repositórios da Google
     - name: Criar Script de Inicialização Global (init.gradle)
       run: |
         cat << 'EOF' > init.gradle
