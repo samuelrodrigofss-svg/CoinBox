@@ -56,20 +56,30 @@ jobs:
     - name: Compilar Código de Interface (Vite Build)
       run: npm run build --if-present
 
-    # 6. Inicializa o Capacitor e cria uma pasta Android nativa novinha e válida
+    # 6. CORREÇÃO: Cria o arquivo capacitor.config.json direto para evitar o erro do CommonJS/TypeScript
     - name: Inicializar e Sincronizar Plataforma Android
       run: |
-        # Cria a pasta 'dist' vazia caso o comando build não tenha gerado com esse nome
         mkdir -p dist
         if [ ! -f "dist/index.html" ] && [ -f "index.html" ]; then
           cp -r index.html src assets dist/ 2>/dev/null || cp -r * dist/ 2>/dev/null || true
         fi
         
-        # Remove a pasta android falsa que veio no seu ZIP para não dar conflito
+        # Remove pastas antigas ou falsas que possam dar conflito
         rm -rf android
+        rm -f capacitor.config.ts
+        rm -f capacitor.config.js
         
-        # Executa a geração oficial do projeto Android estruturado
-        npx cap init CoinBox com.samuel.coinbox --web-dir=dist
+        # Cria a configuração em formato JSON nativo direto na raiz
+        cat << 'EOF' > capacitor.config.json
+        {
+          "appId": "com.samuel.coinbox",
+          "appName": "CoinBox",
+          "webDir": "dist",
+          "bundledWebRuntime": false
+        }
+        EOF
+        
+        # Executa a geração oficial do projeto Android estruturado baseado no JSON
         npx cap add android
         npx cap sync android
 
