@@ -1,4 +1,4 @@
-name: Compilar Novo APK Nativo
+name: Inspecionar Conteudo do Novo App
 
 on:
   push:
@@ -6,114 +6,20 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Baixa o seu repositório onde está o arquivo ZIP
     - name: Baixar código do repositório
       uses: actions/checkout@v4
 
-    # 2. Rastreia e extrai a pasta real do projeto de forma agressiva
-    - name: Extrair Projeto Corretamente
+    # Esse passo vai listar a árvore de arquivos de dentro do seu ZIP no log
+    - name: Listar arquivos dentro do ZIP
       run: |
         ZIP_FILE=$(find . -name "*.zip" | head -n 1)
         if [ -z "$ZIP_FILE" ]; then
-          echo "Nenhum arquivo .zip encontrado no repositório!"
+          echo "Nenhum arquivo .zip encontrado!"
           exit 1
         fi
-        echo "Extraindo projeto: $ZIP_FILE"
-        mkdir -p extracted_project
-        unzip -o "$ZIP_FILE" -d ./extracted_project
-        
-        # Procura de forma profunda onde foi parar o build.gradle principal do app
-        REAL_BUILD_FILE=$(find ./extracted_project -name "build.gradle.kts" -o -name "build.gradle" | grep -v "node_modules" | head -n 1)
-        
-        if [ -n "$REAL_BUILD_FILE" ]; then
-          ROOT_PROJECT_DIR=$(dirname "$REAL_BUILD_FILE")
-          echo "Projeto Android encontrado na pasta: $ROOT_PROJECT_DIR"
-          echo "Movendo todos os arquivos para a raiz de compilação..."
-          cp -r "$ROOT_PROJECT_DIR"/. .
-        else
-          echo "Nenhum arquivo build.gradle encontrado. Copiando tudo por garantia..."
-          cp -r ./extracted_project/* . 2>/dev/null || true
-        fi
-        
-        # Garante que a pasta gradle de configurações esteja na raiz se existir em subpastas
-        REAL_GRADLE_DIR=$(find ./extracted_project -type d -name "gradle" | head -n 1)
-        if [ -n "$REAL_GRADLE_DIR" ] && [ "$REAL_GRADLE_DIR" != "./gradle" ]; then
-          mkdir -p gradle
-          cp -r "$REAL_GRADLE_DIR"/* ./gradle/ 2>/dev/null || true
-        fi
-        
-        # Limpa o lixo temporário
-        rm -rf ./extracted_project
-        
-        # Força o reposicionamento do arquivo de versões se ele existir
-        mkdir -p gradle
-        find . -name "libs.versions.toml" -exec cp {} ./gradle/ \; 2>/dev/null || true
-
-        # Cria os arquivos de ambiente básicos caso o app exija
-        touch .env.example
-        touch .env
-
-    # 3. Configura o Java 17 necessário para Android/Kotlin moderno
-    - name: Configurar Java JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-
-    # 4. Gera o arquivo debug.keystore automaticamente para assinar o aplicativo
-    - name: Gerar Chave de Assinatura (debug.keystore)
-      run: |
-        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        mkdir -p app
-        cp debug.keystore app/
-
-    # 5. Configurar Limites de Memória do Gradle
-    - name: Configurar Limites de Memória do Gradle
-      run: |
-        echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> gradle.properties
-        echo "org.gradle.daemon=false" >> gradle.properties
-        echo "org.gradle.parallel=false" >> gradle.properties
-
-    # 6. Cria o Script de Inicialização Global para os repositórios da Google
-    - name: Criar Script de Inicialização Global (init.gradle)
-      run: |
-        cat << 'EOF' > init.gradle
-        settingsEvaluated { settings ->
-            settings.pluginManagement {
-                repositories {
-                    google()
-                    mavenCentral()
-                    gradlePluginPortal()
-                }
-            }
-            settings.dependencyResolutionManagement {
-                repositories {
-                    google()
-                    mavenCentral()
-                }
-            }
-        }
-        EOF
-
-    # 7. Configura e valida o ambiente com o motor do Gradle
-    - name: Configurar e Validar Gradle Oficial
-      uses: gradle/actions/setup-gradle@v4
-      with:
-        gradle-version: '9.3.1'
-
-    # 8. Compila o arquivo APK nativo do novo aplicativo
-    - name: Compilar APK de Testes (Forçado)
-      run: gradle clean assembleDebug --init-script init.gradle -Djava.awt.headless=true
-
-    # 9. Disponibiliza o arquivo final para download
-    - name: Enviar APK para download
-      uses: actions/upload-artifact@v4
-      with:
-        name: CoinBox-Instalavel
-        path: |
-          **/build/outputs/apk/debug/*.apk
-          app/build/outputs/apk/debug/*.apk
+        echo "=== LISTANDO ARQUIVOS DO ZIP: $ZIP_FILE ==="
+        unzip -l "$ZIP_FILE" | head -n 50
