@@ -14,7 +14,7 @@ jobs:
     - name: Baixar código do repositório
       uses: actions/checkout@v4
 
-    # 2. Extrai o ZIP e move os arquivos se estiverem dentro da pasta 'android'
+    # 2. Rastreia e extrai a pasta real do projeto de forma agressiva
     - name: Extrair Projeto Corretamente
       run: |
         ZIP_FILE=$(find . -name "*.zip" | head -n 1)
@@ -26,34 +26,30 @@ jobs:
         mkdir -p extracted_project
         unzip -o "$ZIP_FILE" -d ./extracted_project
         
-        # CORREÇÃO CRUCIAL: Se o projeto veio dentro de uma pasta chamada 'android', move o conteúdo dela para a raiz
-        if [ -d "./extracted_project/android" ]; then
-          echo "Pasta 'android' detectada. Movendo arquivos para a raiz..."
-          cp -r ./extracted_project/android/. .
+        # Procura de forma profunda onde foi parar o build.gradle principal do app
+        REAL_BUILD_FILE=$(find ./extracted_project -name "build.gradle.kts" -o -name "build.gradle" | grep -v "node_modules" | head -n 1)
+        
+        if [ -n "$REAL_BUILD_FILE" ]; then
+          ROOT_PROJECT_DIR=$(dirname "$REAL_BUILD_FILE")
+          echo "Projeto Android encontrado na pasta: $ROOT_PROJECT_DIR"
+          echo "Movendo todos os arquivos para a raiz de compilação..."
+          cp -r "$ROOT_PROJECT_DIR"/. .
         else
-          # Caso contrário, faz a busca padrão pelo arquivo de build
-          GRADLE_BASE=$(find ./extracted_project -name "build.gradle.kts" -o -name "build.gradle" | head -n 1)
-          if [ -n "$GRADLE_BASE" ]; then
-            ROOT_PROJECT_DIR=$(dirname "$GRADLE_BASE")
-            if [ "$ROOT_PROJECT_DIR" != "./extracted_project" ] && [ "$ROOT_PROJECT_DIR" != "." ]; then
-              cp -r "$ROOT_PROJECT_DIR"/. .
-            else
-              cp -r ./extracted_project/* . 2>/dev/null || true
-              cp -r ./extracted_project/.* . 2>/dev/null || true
-            fi
-          else
-            cp -r ./extracted_project/* . 2>/dev/null || true
-          fi
+          echo "Nenhum arquivo build.gradle encontrado. Copiando tudo por garantia..."
+          cp -r ./extracted_project/* . 2>/dev/null || true
         fi
         
-        # Garante que a pasta gradle de configurações esteja na raiz se existir
+        # Garante que a pasta gradle de configurações esteja na raiz se existir em subpastas
         REAL_GRADLE_DIR=$(find ./extracted_project -type d -name "gradle" | head -n 1)
         if [ -n "$REAL_GRADLE_DIR" ] && [ "$REAL_GRADLE_DIR" != "./gradle" ]; then
           mkdir -p gradle
           cp -r "$REAL_GRADLE_DIR"/* ./gradle/ 2>/dev/null || true
         fi
         
+        # Limpa o lixo temporário
         rm -rf ./extracted_project
+        
+        # Força o reposicionamento do arquivo de versões se ele existir
         mkdir -p gradle
         find . -name "libs.versions.toml" -exec cp {} ./gradle/ \; 2>/dev/null || true
 
@@ -117,7 +113,7 @@ jobs:
     - name: Enviar APK para download
       uses: actions/upload-artifact@v4
       with:
-        name: NovoApp-Instalavel
+        name: CoinBox-Instalavel
         path: |
           **/build/outputs/apk/debug/*.apk
           app/build/outputs/apk/debug/*.apk
