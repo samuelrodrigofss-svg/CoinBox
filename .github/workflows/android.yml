@@ -1,4 +1,4 @@
-name: Inspecionar Conteudo do Novo App
+name: Compilar APK React Native
 
 on:
   push:
@@ -6,20 +6,117 @@ on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
 
     steps:
+    # 1. Baixa o seu repositório onde está o arquivo ZIP
     - name: Baixar código do repositório
       uses: actions/checkout@v4
 
-    # Esse passo vai listar a árvore de arquivos de dentro do seu ZIP no log
-    - name: Listar arquivos dentro do ZIP
+    # 2. Extrai o ZIP garantindo que tudo fique na raiz
+    - name: Extrair Projeto Corretamente
       run: |
         ZIP_FILE=$(find . -name "*.zip" | head -n 1)
         if [ -z "$ZIP_FILE" ]; then
-          echo "Nenhum arquivo .zip encontrado!"
+          echo "Nenhum arquivo .zip encontrado no repositório!"
           exit 1
         fi
-        echo "=== LISTANDO ARQUIVOS DO ZIP: $ZIP_FILE ==="
-        unzip -l "$ZIP_FILE" | head -n 50
+        echo "Extraindo projeto: $ZIP_FILE"
+        mkdir -p extracted_project
+        unzip -o "$ZIP_FILE" -d ./extracted_project
+        
+        # Se os arquivos estiverem dentro de uma subpasta, traz para a raiz
+        if [ -f "./extracted_project/package.json" ]; then
+          cp -r ./extracted_project/. .
+        else
+          SUB_PKG=$(find ./extracted_project -name "package.json" | head -n 1)
+          if [ -n "$SUB_PKG" ]; then
+            ROOT_PROJECT_DIR=$(dirname "$SUB_PKG")
+            cp -r "$ROOT_PROJECT_DIR"/. .
+          else
+            cp -r ./extracted_project/* . 2>/dev/null || true
+          fi
+        fi
+        rm -rf ./extracted_project
+        touch .env.example .env
+
+    # 3. Configura o Node.js (necessário para o ecossistema do React Native)
+    - name: Configurar Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    # 4. Instala os pacotes e dependências do seu App
+    - name: Instalar Dependências do Projeto (NPM)
+      run: npm install --legacy-peer-deps
+
+    # 5. Configura o Java necessário para a compilação do Android
+    - name: Configurar Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    # 6. Cria as chaves de segurança para assinar o APK de testes do React Native
+    - name: Gerar Chave de Assinatura (debug.keystore)
+      run: |
+        mkdir -p android/app
+        keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+    # 7. Configura os limites de memória do Gradle para o servidor não cair
+    - name: Configurar Limites de Memória do Gradle
+      run: |
+        mkdir -p android
+        echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle_properties_backup || true
+        if [ -f "android/gradle.properties" ]; then
+          echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> android/gradle.properties
+          echo "org.gradle.daemon=false" >> android/gradle.properties
+        else
+          echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" > android/gradle.properties
+          echo "org.gradle.daemon=false" >> android/gradle.properties
+        fi
+
+    # 8. Cria o Script de Inicialização Global para os repositórios da Google
+    - name: Criar Script de Inicialização Global (init.gradle)
+      run: |
+        cat << 'EOF' > init.gradle
+        settingsEvaluated { settings ->
+            settings.pluginManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                    gradlePluginPortal()
+                }
+            }
+            settings.dependencyResolutionManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                }
+            }
+        }
+        EOF
+
+    # 9. Configura a versão correta do Gradle exigida pelo seu projeto
+    - name: Configurar e Validar Gradle Oficial
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '9.3.1'
+
+    # 10. Compila o arquivo APK rodando o comando dentro da pasta do Android
+    - name: Compilar APK de Testes React Native
+      run: |
+        cd android
+        chmod +x gradlew 2>/dev/null || true
+        gradle clean assembleDebug --init-script ../init.gradle -Djava.awt.headless=true
+
+    # 11. Disponibiliza o arquivo final para download
+    - name: Enviar APK para download
+      uses: actions/upload-artifact@v4
+      with:
+        name: CoinBox-Instalavel
+        path: |
+          **/build/outputs/apk/debug/*.apk
+          android/app/build/outputs/apk/debug/*.apk
