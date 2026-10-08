@@ -1,0 +1,107 @@
+name: Compilar APK Nativo Kotlin
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Baixa o seu repositório onde está o arquivo ZIP
+    - name: Baixar código do repositório
+      uses: actions/checkout@v4
+
+    # 2. Extrai o ZIP corrigindo a árvore de pastas e arquivos ocultos
+    - name: Extrair Projeto e Corrigir Pastas Ocultas
+      run: |
+        ZIP_FILE=$(find . -name "*.zip" | head -n 1)
+        if [ -z "$ZIP_FILE" ]; then
+          echo "Nenhum arquivo .zip encontrado no repositório!"
+          exit 1
+        fi
+        echo "Extraindo projeto: $ZIP_FILE"
+        mkdir -p extracted_project
+        unzip -o "$ZIP_FILE" -d ./extracted_project
+        
+        GRADLE_BASE=$(find ./extracted_project -name "build.gradle.kts" | head -n 1)
+        ROOT_PROJECT_DIR=$(dirname "$GRADLE_BASE")
+        
+        echo "Copiando arquivos da raiz do projeto..."
+        cp -r "$ROOT_PROJECT_DIR"/. .
+        
+        REAL_GRADLE_DIR=$(find ./extracted_project -type d -name "gradle" | head -n 1)
+        if [ -n "$REAL_GRADLE_DIR" ] && [ "$REAL_GRADLE_DIR" != "./gradle" ]; then
+          cp -r "$REAL_GRADLE_DIR"/. ./gradle/ 2>/dev/null || mkdir -p gradle && cp -r "$REAL_GRADLE_DIR"/* ./gradle/
+        fi
+        rm -rf ./extracted_project
+        mkdir -p gradle
+        find . -name "libs.versions.toml" -exec cp {} ./gradle/ \; 2>/dev/null || true
+
+        # Garante a existência dos arquivos de ambiente exigidos
+        touch .env.example
+        touch .env
+
+    # 3. Configura o Java 17 necessário para Android/Kotlin moderno
+    - name: Configurar Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    # 4. SOLUÇÃO FINAL: Gera o arquivo debug.keystore automaticamente para assinar o aplicativo
+    - name: Gerar Chave de Assinatura (debug.keystore)
+      run: |
+        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        # Cria cópias estratégicas caso o projeto procure o arquivo dentro da pasta 'app' ou na raiz
+        mkdir -p app
+        cp debug.keystore app/
+
+    # 5. Configurar Limites de Memória do Gradle (gradle.properties)
+    - name: Configurar Limites de Memória do Gradle
+      run: |
+        echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> gradle.properties
+        echo "org.gradle.daemon=false" >> gradle.properties
+        echo "org.gradle.parallel=false" >> gradle.properties
+
+    # 6. Cria o Script de Inicialização Global para os repositórios da Google
+    - name: Criar Script de Inicialização Global (init.gradle)
+      run: |
+        cat << 'EOF' > init.gradle
+        settingsEvaluated { settings ->
+            settings.pluginManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                    gradlePluginPortal()
+                }
+            }
+            settings.dependencyResolutionManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                }
+            }
+        }
+        EOF
+
+    # 7. Configura e valida o ambiente com a versão solicitada do Gradle
+    - name: Configurar e Validar Gradle Oficial
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '9.3.1'
+
+    # 8. Compila o arquivo APK controlando rigorosamente o consumo de memória e aplicando a assinatura
+    - name: Compilar APK de Testes (Forçado)
+      run: gradle clean assembleDebug --init-script init.gradle -Djava.awt.headless=true
+
+    # 9. Disponibiliza o arquivo final para download
+    - name: Enviar APK para download
+      uses: actions/upload-artifact@v4
+      with:
+        name: PixReward-Instalavel
+        path: |
+          **/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/debug/*.apk
