@@ -80,24 +80,39 @@ jobs:
         npx cap add android
         npx cap sync android
 
-    # 7. CORREÇÃO DEFINITIVA: Injeta as regras de exclusão usando o arquivo buildExtras do Gradle
-    - name: Forçar Resolução de Duplicidade do Kotlin
+    # 7. CORREÇÃO GLOBAL: Força a exclusão de qualquer arquivo Kotlin duplicado diretamente nos arquivos principais do Gradle
+    - name: Forçar Resolução de Conflito de Bibliotecas
       run: |
-        mkdir -p android/app
-        cat << 'EOF' > android/app/buildExtras.gradle
-        android {
-            packagingOptions {
-                resources {
-                    excludes += "META-INF/kotlin-stdlib*"
-                    excludes += "META-INF/kotlinx-*"
-                    excludes += "META-INF/kotlin-*"
-                }
-            }
-        }
-        EOF
-        # Avisa o build principal para carregar essas configurações extras
+        # Injeta uma regra para ignorar duplicados no arquivo do Aplicativo
         if [ -f "android/app/build.gradle" ]; then
-            echo "apply from: 'buildExtras.gradle'" >> android/app/build.gradle
+          echo "Injetando packaging block no app/build.gradle..."
+          cat << 'EOF' >> android/app/build.gradle
+          android {
+              packaging {
+                  resources {
+                      excludes += "META-INF/**"
+                      pickFirsts += "**/kotlin-stdlib-jdk*"
+                      pickFirsts += "**/kotlin-stdlib*"
+                  }
+              }
+          }
+          EOF
+        fi
+        
+        # Injeta uma regra de resolução de versão idêntica no arquivo raiz do Android
+        if [ -f "android/build.gradle" ]; then
+          echo "Injetando resolutionStrategy no build.gradle da raiz..."
+          cat << 'EOF' >> android/build.gradle
+          subprojects {
+              configurations.all {
+                  resolutionStrategy {
+                      force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+                  }
+              }
+          }
+          EOF
         fi
 
     # 8. Configura o Java JDK 21 exigido pelo compilador do app
