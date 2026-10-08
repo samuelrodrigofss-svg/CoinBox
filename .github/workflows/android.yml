@@ -56,7 +56,7 @@ jobs:
     - name: Compilar Código de Interface (Vite Build)
       run: npm run build --if-present
 
-    # 6. CORREÇÃO: Cria o arquivo capacitor.config.json direto para evitar o erro do CommonJS/TypeScript
+    # 6. Cria o arquivo capacitor.config.json direto para evitar o erro do CommonJS/TypeScript
     - name: Inicializar e Sincronizar Plataforma Android
       run: |
         mkdir -p dist
@@ -64,12 +64,10 @@ jobs:
           cp -r index.html src assets dist/ 2>/dev/null || cp -r * dist/ 2>/dev/null || true
         fi
         
-        # Remove pastas antigas ou falsas que possam dar conflito
         rm -rf android
         rm -f capacitor.config.ts
         rm -f capacitor.config.js
         
-        # Cria a configuração em formato JSON nativo direto na raiz
         cat << 'EOF' > capacitor.config.json
         {
           "appId": "com.samuel.coinbox",
@@ -79,7 +77,6 @@ jobs:
         }
         EOF
         
-        # Executa a geração oficial do projeto Android estruturado baseado no JSON
         npx cap add android
         npx cap sync android
 
@@ -123,11 +120,11 @@ jobs:
         }
         EOF
 
-    # 11. Configura a versão recomendada do Gradle para projetos do Capacitor
+    # 11. CORREÇÃO: Atualizado para a versão 8.9 exigida pelo validador do seu app
     - name: Configurar e Validar Gradle Oficial
       uses: gradle/actions/setup-gradle@v4
       with:
-        gradle-version: '8.5'
+        gradle-version: '8.9'
 
     # 12. Compila o APK usando a nova pasta android gerada com sucesso
     - name: Compilar APK Final CoinBox
