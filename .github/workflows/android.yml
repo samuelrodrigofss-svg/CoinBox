@@ -41,12 +41,11 @@ jobs:
         rm -rf ./extracted_project
         touch .env.example .env
 
-    # 3. Configura o Node.js (necessário para o ecossistema do React Native)
+    # 3. CORREÇÃO: Configura o Node.js SEM a linha de cache para evitar o erro de arquivo faltando
     - name: Configurar Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm'
 
     # 4. Instala os pacotes e dependências do seu App
     - name: Instalar Dependências do Projeto (NPM)
