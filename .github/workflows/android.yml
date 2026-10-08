@@ -1,4 +1,4 @@
-name: Compilar APK Nativo Kotlin
+name: Compilar Novo APK Nativo
 
 on:
   push:
@@ -14,8 +14,8 @@ jobs:
     - name: Baixar código do repositório
       uses: actions/checkout@v4
 
-    # 2. Extrai o ZIP corrigindo a árvore de pastas e arquivos ocultos
-    - name: Extrair Projeto e Corrigir Pastas Ocultas
+    # 2. Extrai o ZIP de forma inteligente adaptando-se à estrutura das pastas
+    - name: Extrair Projeto Corretamente
       run: |
         ZIP_FILE=$(find . -name "*.zip" | head -n 1)
         if [ -z "$ZIP_FILE" ]; then
@@ -26,21 +26,37 @@ jobs:
         mkdir -p extracted_project
         unzip -o "$ZIP_FILE" -d ./extracted_project
         
-        GRADLE_BASE=$(find ./extracted_project -name "build.gradle.kts" | head -n 1)
-        ROOT_PROJECT_DIR=$(dirname "$GRADLE_BASE")
+        # Encontra o diretório real que contém o arquivo de build principal
+        GRADLE_BASE=$(find ./extracted_project -name "build.gradle.kts" -o -name "build.gradle" | head -n 1)
         
-        echo "Copiando arquivos da raiz do projeto..."
-        cp -r "$ROOT_PROJECT_DIR"/. .
+        if [ -n "$GRADLE_BASE" ]; then
+          ROOT_PROJECT_DIR=$(dirname "$GRADLE_BASE")
+          # Só copia se os arquivos estiverem em uma subpasta profunda. Se já for a raiz '.', pula para evitar o erro do mesmo arquivo
+          if [ "$ROOT_PROJECT_DIR" != "./extracted_project" ] && [ "$ROOT_PROJECT_DIR" != "." ]; then
+            echo "Movendo arquivos da subpasta $ROOT_PROJECT_DIR para a raiz de compilação..."
+            cp -r "$ROOT_PROJECT_DIR"/. .
+          else
+            echo "Os arquivos já estão estruturados na raiz. Copiando conteúdo..."
+            cp -r ./extracted_project/* . 2>/dev/null || true
+            cp -r ./extracted_project/.* . 2>/dev/null || true
+          fi
+        else
+          echo "Aviso: build.gradle não encontrado de primeira. Copiando tudo de forma padrão..."
+          cp -r ./extracted_project/* . 2>/dev/null || true
+        fi
         
+        # Garante que a pasta gradle de configurações esteja na raiz se existir
         REAL_GRADLE_DIR=$(find ./extracted_project -type d -name "gradle" | head -n 1)
         if [ -n "$REAL_GRADLE_DIR" ] && [ "$REAL_GRADLE_DIR" != "./gradle" ]; then
-          cp -r "$REAL_GRADLE_DIR"/. ./gradle/ 2>/dev/null || mkdir -p gradle && cp -r "$REAL_GRADLE_DIR"/* ./gradle/
+          mkdir -p gradle
+          cp -r "$REAL_GRADLE_DIR"/* ./gradle/ 2>/dev/null || true
         fi
+        
         rm -rf ./extracted_project
         mkdir -p gradle
         find . -name "libs.versions.toml" -exec cp {} ./gradle/ \; 2>/dev/null || true
 
-        # Garante a existência dos arquivos de ambiente exigidos
+        # Cria os arquivos de ambiente básicos caso o app exija
         touch .env.example
         touch .env
 
@@ -51,15 +67,14 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    # 4. SOLUÇÃO FINAL: Gera o arquivo debug.keystore automaticamente para assinar o aplicativo
+    # 4. Gera o arquivo debug.keystore automaticamente para assinar o aplicativo
     - name: Gerar Chave de Assinatura (debug.keystore)
       run: |
         keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        # Cria cópias estratégicas caso o projeto procure o arquivo dentro da pasta 'app' ou na raiz
         mkdir -p app
         cp debug.keystore app/
 
-    # 5. Configurar Limites de Memória do Gradle (gradle.properties)
+    # 5. Configurar Limites de Memória do Gradle
     - name: Configurar Limites de Memória do Gradle
       run: |
         echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC" >> gradle.properties
@@ -87,13 +102,13 @@ jobs:
         }
         EOF
 
-    # 7. Configura e valida o ambiente com a versão solicitada do Gradle
+    # 7. Configura e valida o ambiente com o motor do Gradle
     - name: Configurar e Validar Gradle Oficial
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: '9.3.1'
 
-    # 8. Compila o arquivo APK controlando rigorosamente o consumo de memória e aplicando a assinatura
+    # 8. Compila o arquivo APK nativo do novo aplicativo
     - name: Compilar APK de Testes (Forçado)
       run: gradle clean assembleDebug --init-script init.gradle -Djava.awt.headless=true
 
@@ -101,7 +116,7 @@ jobs:
     - name: Enviar APK para download
       uses: actions/upload-artifact@v4
       with:
-        name: PixReward-Instalavel
+        name: NovoApp-Instalavel
         path: |
           **/build/outputs/apk/debug/*.apk
           app/build/outputs/apk/debug/*.apk
